@@ -25,7 +25,6 @@
   })(function($) {
     "use strict";
     var EditableCaret, InputCaret, Mirror, Utils, methods, pluginName;
-
     pluginName = 'caret';
     EditableCaret = (function() {
       function EditableCaret($inputor) {
@@ -47,7 +46,6 @@
 
       EditableCaret.prototype.getOldIEPos = function() {
         var preCaretTextRange, textRange;
-
         textRange = document.selection.createRange();
         preCaretTextRange = document.body.createTextRange();
         preCaretTextRange.moveToElementText(this.domInputor);
@@ -57,7 +55,6 @@
 
       EditableCaret.prototype.getPos = function() {
         var clonedRange, pos, range;
-
         if (range = this.range()) {
           clonedRange = range.cloneRange();
           clonedRange.selectNodeContents(this.domInputor);
@@ -72,7 +69,6 @@
 
       EditableCaret.prototype.getOldIEOffset = function() {
         var range, rect;
-
         range = document.selection.createRange().duplicate();
         range.moveStart("character", -1);
         rect = range.getBoundingClientRect();
@@ -85,7 +81,6 @@
 
       EditableCaret.prototype.getOffset = function(pos) {
         var clonedRange, offset, range, rect;
-
         offset = null;
         if (window.getSelection && (range = this.range())) {
           if (range.endOffset - 1 < 0) {
@@ -105,12 +100,15 @@
         } else if (document.selection) {
           this.getOldIEOffset();
         }
-        return Utils.adjustOffset(offset, this.$inputor);
+        if (offset) {
+          offset.top += $(window).scrollTop();
+          offset.left += $(window).scrollLeft();
+        }
+        return offset;
       };
 
       EditableCaret.prototype.range = function() {
         var sel;
-
         if (!window.getSelection) {
           return;
         }
@@ -133,7 +131,6 @@
 
       InputCaret.prototype.getIEPos = function() {
         var endRange, inputor, len, normalizedValue, pos, range, textInputRange;
-
         inputor = this.domInputor;
         range = document.selection.createRange();
         pos = 0;
@@ -163,7 +160,6 @@
 
       InputCaret.prototype.setPos = function(pos) {
         var inputor, range;
-
         inputor = this.domInputor;
         if (document.selection) {
           range = inputor.createTextRange();
@@ -177,7 +173,6 @@
 
       InputCaret.prototype.getIEOffset = function(pos) {
         var h, range, textRange, x, y;
-
         textRange = this.domInputor.createTextRange();
         if (pos) {
           textRange.move('character', pos);
@@ -197,16 +192,18 @@
 
       InputCaret.prototype.getOffset = function(pos) {
         var $inputor, offset, position;
-
         $inputor = this.$inputor;
         if (document.selection) {
-          return Utils.adjustOffset(this.getIEOffset(pos), $inputor);
+          offset = this.getIEOffset(pos);
+          offset.top += $(window).scrollTop() + $inputor.scrollTop();
+          offset.left += $(window).scrollLeft() + $inputor.scrollLeft();
+          return offset;
         } else {
           offset = $inputor.offset();
           position = this.getPosition(pos);
           return offset = {
-            left: offset.left + position.left,
-            top: offset.top + position.top,
+            left: offset.left + position.left - $inputor.scrollLeft(),
+            top: offset.top + position.top - $inputor.scrollTop(),
             height: position.height
           };
         }
@@ -214,7 +211,6 @@
 
       InputCaret.prototype.getPosition = function(pos) {
         var $inputor, at_rect, format, html, mirror, start_range;
-
         $inputor = this.$inputor;
         format = function(value) {
           return value.replace(/</g, '&lt').replace(/>/g, '&gt').replace(/`/g, '&#96').replace(/"/g, '&quot').replace(/\r\n|\r|\n/g, "<br />");
@@ -231,7 +227,6 @@
 
       InputCaret.prototype.getIEPosition = function(pos) {
         var h, inputorOffset, offset, x, y;
-
         offset = this.getIEOffset(pos);
         inputorOffset = this.$inputor.offset();
         x = offset.left - inputorOffset.left;
@@ -257,7 +252,6 @@
       Mirror.prototype.mirrorCss = function() {
         var css,
           _this = this;
-
         css = {
           position: 'absolute',
           left: -9999,
@@ -281,7 +275,6 @@
 
       Mirror.prototype.rect = function() {
         var $flag, pos, rect;
-
         $flag = this.$mirror.find("#caret");
         pos = $flag.position();
         rect = {
@@ -301,8 +294,8 @@
         if (!offset) {
           return;
         }
-        offset.top += $(window).scrollTop() + $inputor.scrollTop();
-        offset.left += +$(window).scrollLeft() + $inputor.scrollLeft();
+        offset.top += $(window).scrollTop();
+        offset.left += $(window).scrollLeft();
         return offset;
       },
       contentEditable: function($inputor) {
@@ -330,7 +323,6 @@
     };
     $.fn.caret = function(method) {
       var caret;
-
       caret = Utils.contentEditable(this) ? new EditableCaret(this) : new InputCaret(this);
       if (methods[method]) {
         return methods[method].apply(caret, Array.prototype.slice.call(arguments, 1));
@@ -372,16 +364,17 @@
       function App(inputor) {
         this.current_flag = null;
         this.controllers = {};
+        this.alias_maps = {};
         this.$inputor = $(inputor);
         this.listen();
       }
 
-      App.prototype.controller = function(key) {
-        return this.controllers[key || this.current_flag];
+      App.prototype.controller = function(at) {
+        return this.controllers[this.alias_maps[at] || at || this.current_flag];
       };
 
-      App.prototype.set_context_for = function(key) {
-        this.current_flag = key;
+      App.prototype.set_context_for = function(at) {
+        this.current_flag = at;
         return this;
       };
 
@@ -389,7 +382,7 @@
         var controller, _base;
         controller = (_base = this.controllers)[flag] || (_base[flag] = new Controller(this, flag));
         if (setting.alias) {
-          this.controllers[setting.alias] = controller;
+          this.alias_maps[setting.alias] = flag;
         }
         controller.init(setting);
         return this;
@@ -416,7 +409,7 @@
         var _this = this;
         return $.map(this.controllers, function(c) {
           if (c.look_up()) {
-            return _this.set_context_for(c.key);
+            return _this.set_context_for(c.at);
           }
         });
       };
@@ -483,10 +476,9 @@
         return _uuid += 1;
       };
 
-      function Controller(app, key) {
+      function Controller(app, at) {
         this.app = app;
-        this.key = key;
-        this.at = this.key;
+        this.at = at;
         this.$inputor = this.app.$inputor;
         this.id = this.$inputor[0].id || uuid();
         this.setting = null;
@@ -501,6 +493,7 @@
 
       Controller.prototype.init = function(setting) {
         this.setting = $.extend({}, this.setting || $.fn.atwho["default"], setting);
+        this.view.init();
         return this.model.reload(this.setting.data);
       };
 
@@ -526,9 +519,9 @@
         return this.get_opt("callbacks")[func_name] || DEFAULT_CALLBACKS[func_name];
       };
 
-      Controller.prototype.get_opt = function(key, default_value) {
+      Controller.prototype.get_opt = function(at, default_value) {
         try {
-          return this.setting[key];
+          return this.setting[at];
         } catch (e) {
           return null;
         }
@@ -547,7 +540,7 @@
         content = this.content();
         caret_pos = this.$inputor.caret('pos');
         subtext = content.slice(0, caret_pos);
-        query = this.callbacks("matcher").call(this, this.key, subtext, this.get_opt('start_with_space'));
+        query = this.callbacks("matcher").call(this, this.at, subtext, this.get_opt('start_with_space'));
         if (typeof query === "string" && query.length <= this.get_opt('max_len', 20)) {
           start = caret_pos - query.length;
           end = start + query.length;
@@ -557,7 +550,7 @@
             'head_pos': start,
             'end_pos': end
           };
-          this.trigger("matched", [this.key, query.text]);
+          this.trigger("matched", [this.at, query.text]);
         } else {
           this.view.hide();
         }
@@ -682,13 +675,11 @@
 
     })();
     Model = (function() {
-      var _storage;
-
-      _storage = {};
 
       function Model(context) {
         this.context = context;
-        this.key = this.context.key;
+        this.at = this.context.at;
+        this.storage = this.context.$inputor;
       }
 
       Model.prototype.saved = function() {
@@ -696,21 +687,24 @@
       };
 
       Model.prototype.query = function(query, callback) {
-        var data, search_key, _ref;
+        var data, search_key, _remote_filter;
         data = this.fetch();
         search_key = this.context.get_opt("search_key");
-        callback(data = this.context.callbacks('filter').call(this.context, query, data, search_key));
-        if (!(data && data.length > 0)) {
-          return (_ref = this.context.callbacks('remote_filter')) != null ? _ref.call(this.context, query, callback) : void 0;
+        data = this.context.callbacks('filter').call(this.context, query, data, search_key) || [];
+        _remote_filter = this.context.callbacks('remote_filter');
+        if (data.length > 0 || (!_remote_filter && data.length === 0)) {
+          return callback(data);
+        } else {
+          return _remote_filter.call(this.context, query, callback);
         }
       };
 
       Model.prototype.fetch = function() {
-        return _storage[this.key] || [];
+        return this.storage.data(this.at) || [];
       };
 
       Model.prototype.save = function(data) {
-        return _storage[this.key] = this.context.callbacks("before_save").call(this.context, data || []);
+        return this.storage.data(this.at, this.context.callbacks("before_save").call(this.context, data || []));
       };
 
       Model.prototype.load = function(data) {
@@ -743,13 +737,19 @@
 
       function View(context) {
         this.context = context;
-        this.key = this.context.key;
-        this.id = this.context.get_opt("alias") || ("at-view-" + (this.key.charCodeAt(0)));
-        this.$el = $("<div id='" + this.id + "' class='atwho-view'><ul id='" + this.id + "-ul' class='atwho-view-url'></ul></div>");
+        this.$el = $("<div class='atwho-view'><ul class='atwho-view-ul'></ul></div>");
         this.timeout_id = null;
         this.context.$el.append(this.$el);
         this.bind_event();
       }
+
+      View.prototype.init = function() {
+        var id;
+        id = this.context.get_opt("alias") || this.context.at.charCodeAt(0);
+        return this.$el.attr({
+          'id': "at-view-" + id
+        });
+      };
 
       View.prototype.bind_event = function() {
         var $menu,
@@ -842,7 +842,7 @@
 
       View.prototype.render = function(list) {
         var $li, $ul, item, li, tpl, _i, _len;
-        if (!$.isArray(list || list.length <= 0)) {
+        if (!($.isArray(list) && list.length > 0)) {
           this.hide();
           return;
         }
@@ -959,22 +959,22 @@
       }
     };
     Api = {
-      load: function(key, data) {
+      load: function(at, data) {
         var c;
-        if (c = this.controller(key)) {
+        if (c = this.controller(at)) {
           return c.model.load(data);
         }
       },
-      getInsertedItemsWithIDs: function(key) {
+      getInsertedItemsWithIDs: function(at) {
         var c, ids, items;
-        if (!(c = this.controller(key))) {
+        if (!(c = this.controller(at))) {
           return [null, null];
         }
-        if (key) {
-          key = "-" + (c.get_opt('alias') || c.at);
+        if (at) {
+          at = "-" + (c.get_opt('alias') || c.at);
         }
         ids = [];
-        items = $.map(this.$inputor.find("span.atwho-view-flag" + (key || "")), function(item) {
+        items = $.map(this.$inputor.find("span.atwho-view-flag" + (at || "")), function(item) {
           var data;
           data = $(item).data('atwho-data-item');
           if (ids.indexOf(data.id) > -1) {
@@ -987,11 +987,11 @@
         });
         return [ids, items];
       },
-      getInsertedItems: function(key) {
-        return Api.getInsertedItemsWithIDs.apply(this, [key])[1];
+      getInsertedItems: function(at) {
+        return Api.getInsertedItemsWithIDs.apply(this, [at])[1];
       },
-      getInsertedIDs: function(key) {
-        return Api.getInsertedItemsWithIDs.apply(this, [key])[0];
+      getInsertedIDs: function(at) {
+        return Api.getInsertedItemsWithIDs.apply(this, [at])[0];
       },
       run: function() {
         return this.dispatch();
