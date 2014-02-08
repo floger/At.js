@@ -108,6 +108,9 @@
 
     constructor: (@app, @at) ->
       @$inputor = @app.$inputor
+      @oDocument = @$inputor[0].ownerDocument
+      @oWindow = @oDocument.defaultView || @oDocument.parentWindow
+
       @id = @$inputor[0].id || uuid()
       @setting  = null
       @query    = null
@@ -202,17 +205,9 @@
       @cur_rect = null if @$inputor.attr('contentEditable') == 'true'
 
     mark_range: ->
-      @range = this.get_range()
-      @ie_range = this.get_ie_range()
-
-    clear_range: ->
-      @range = null
-
-    get_range: ->
-      @range || (window.getSelection().getRangeAt(0) if window.getSelection)
-
-    get_ie_range: ->
-      @ie_range || (document.selection.createRange() if document.selection)
+      if @$inputor.attr('contentEditable') == 'true'
+        @range = @oWindow.getSelection().getRangeAt(0) if @oWindow.getSelection
+        @ie8_range = @oDocument.selection.createRange() if @oDocument.selection
 
     insert_content_for: ($li) ->
       data_value = $li.data('value')
@@ -233,9 +228,9 @@
         class_name = "atwho-view-flag atwho-view-flag-#{this.get_opt('alias') || @at}"
         content_node = "#{content}<span contenteditable='false'>&nbsp;<span>"
         insert_node = "<span contenteditable='false' class='#{class_name}'>#{content_node}</span>"
-        $insert_node = $(insert_node).data('atwho-data-item', $li.data('item-data'))
-        if document.selection
-          $insert_node = $("<span contenteditable='true'></span>").html($insert_node)
+        $insert_node = $(insert_node, @oDocument).data('atwho-data-item', $li.data('item-data'))
+        if @oDocument.selection
+          $insert_node = $("<span contenteditable='true'></span>", @oDocument).html($insert_node)
 
       if $inputor.is('textarea, input')
         # ensure str is str.
@@ -246,17 +241,17 @@
         text = "#{start_str}#{content} #{source.slice @query['end_pos'] || 0}"
         $inputor.val text
         $inputor.caret 'pos',start_str.length + content.length + 1
-      else if range = this.get_range()
+      else if range = @range
         pos = range.startOffset - (@query.end_pos - @query.head_pos) - @at.length
         range.setStart(range.endContainer, Math.max(pos,0))
         range.setEnd(range.endContainer, range.endOffset)
         range.deleteContents()
         range.insertNode($insert_node[0])
         range.collapse(false)
-        sel = window.getSelection()
+        sel = @oWindow.getSelection()
         sel.removeAllRanges()
         sel.addRange(range)
-      else if range = this.get_ie_range() # IE < 9
+      else if range = @ie8_range # IE < 9
         # NOTE: have to add this <meta http-equiv="x-ua-compatible" content="IE=Edge"/> into <header>
         #       to make it work batter.
         # REF:  http://stackoverflow.com/questions/15535933/ie-html1114-error-with-custom-cleditor-button?answertab=votes#tab-top
@@ -364,12 +359,6 @@
         this.choose()
         e.preventDefault()
 
-      @$el.on 'mouseenter.atwho-view', 'ul', (e) =>
-        @context.mark_range()
-      .on 'mouseleave.atwho-view', 'ul', (e) =>
-        @context.clear_range()
-
-
     # Check if view is visible
     #
     # @return [Boolean]
@@ -403,6 +392,7 @@
       prev.addClass 'cur'
 
     show: ->
+      @context.mark_range()
       @$el.show() if not this.visible()
       this.reposition(rect) if rect = @context.rect()
 
@@ -433,7 +423,7 @@
         $ul.append $li
 
       this.show()
-      $ul.find("li:first").addClass "cur"
+      $ul.find("li:first").addClass "cur" 
 
   KEY_CODE =
     DOWN: 40

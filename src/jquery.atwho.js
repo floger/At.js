@@ -140,6 +140,8 @@
         this.app = app;
         this.at = at;
         this.$inputor = this.app.$inputor;
+        this.oDocument = this.$inputor[0].ownerDocument;
+        this.oWindow = this.oDocument.defaultView || this.oDocument.parentWindow;
         this.id = this.$inputor[0].id || uuid();
         this.setting = null;
         this.query = null;
@@ -240,20 +242,14 @@
       };
 
       Controller.prototype.mark_range = function() {
-        this.range = this.get_range();
-        return this.ie_range = this.get_ie_range();
-      };
-
-      Controller.prototype.clear_range = function() {
-        return this.range = null;
-      };
-
-      Controller.prototype.get_range = function() {
-        return this.range || (window.getSelection ? window.getSelection().getRangeAt(0) : void 0);
-      };
-
-      Controller.prototype.get_ie_range = function() {
-        return this.ie_range || (document.selection ? document.selection.createRange() : void 0);
+        if (this.$inputor.attr('contentEditable') === 'true') {
+          if (this.oWindow.getSelection) {
+            this.range = this.oWindow.getSelection().getRangeAt(0);
+          }
+          if (this.oDocument.selection) {
+            return this.ie8_range = this.oDocument.selection.createRange();
+          }
+        }
       };
 
       Controller.prototype.insert_content_for = function($li) {
@@ -277,9 +273,9 @@
           class_name = "atwho-view-flag atwho-view-flag-" + (this.get_opt('alias') || this.at);
           content_node = "" + content + "<span contenteditable='false'>&nbsp;<span>";
           insert_node = "<span contenteditable='false' class='" + class_name + "'>" + content_node + "</span>";
-          $insert_node = $(insert_node).data('atwho-data-item', $li.data('item-data'));
-          if (document.selection) {
-            $insert_node = $("<span contenteditable='true'></span>").html($insert_node);
+          $insert_node = $(insert_node, this.oDocument).data('atwho-data-item', $li.data('item-data'));
+          if (this.oDocument.selection) {
+            $insert_node = $("<span contenteditable='true'></span>", this.oDocument).html($insert_node);
           }
         }
         if ($inputor.is('textarea, input')) {
@@ -289,17 +285,17 @@
           text = "" + start_str + content + " " + (source.slice(this.query['end_pos'] || 0));
           $inputor.val(text);
           $inputor.caret('pos', start_str.length + content.length + 1);
-        } else if (range = this.get_range()) {
+        } else if (range = this.range) {
           pos = range.startOffset - (this.query.end_pos - this.query.head_pos) - this.at.length;
           range.setStart(range.endContainer, Math.max(pos, 0));
           range.setEnd(range.endContainer, range.endOffset);
           range.deleteContents();
           range.insertNode($insert_node[0]);
           range.collapse(false);
-          sel = window.getSelection();
+          sel = this.oWindow.getSelection();
           sel.removeAllRanges();
           sel.addRange(range);
-        } else if (range = this.get_ie_range()) {
+        } else if (range = this.ie8_range) {
           range.moveStart('character', this.query.end_pos - this.query.head_pos - this.at.length);
           range.pasteHTML(content_node);
           range.collapse(false);
@@ -416,17 +412,12 @@
         var $menu,
           _this = this;
         $menu = this.$el.find('ul');
-        $menu.on('mouseenter.atwho-view', 'li', function(e) {
+        return $menu.on('mouseenter.atwho-view', 'li', function(e) {
           $menu.find('.cur').removeClass('cur');
           return $(e.currentTarget).addClass('cur');
         }).on('click', function(e) {
           _this.choose();
           return e.preventDefault();
-        });
-        return this.$el.on('mouseenter.atwho-view', 'ul', function(e) {
-          return _this.context.mark_range();
-        }).on('mouseleave.atwho-view', 'ul', function(e) {
-          return _this.context.clear_range();
         });
       };
 
@@ -478,6 +469,7 @@
 
       View.prototype.show = function() {
         var rect;
+        this.context.mark_range();
         if (!this.visible()) {
           this.$el.show();
         }

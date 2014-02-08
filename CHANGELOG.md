@@ -1,3 +1,11 @@
+### v0.4.6
+
+* 2d9ab23 fix `wrong document` error in IE iframe
+
+### v0.4.5
+
+* 664a765 support iframe 
+
 ### v0.4.4
 
 * 9ac7e75 - improve contentEditable for IE 8

@@ -24,7 +24,7 @@
     }
   })(function($) {
     "use strict";
-    var EditableCaret, InputCaret, Mirror, Utils, methods, pluginName;
+    var EditableCaret, InputCaret, Mirror, Utils, methods, oDocument, oFrame, oWindow, pluginName;
     pluginName = 'caret';
     EditableCaret = (function() {
       function EditableCaret($inputor) {
@@ -46,8 +46,8 @@
 
       EditableCaret.prototype.getOldIEPos = function() {
         var preCaretTextRange, textRange;
-        textRange = document.selection.createRange();
-        preCaretTextRange = document.body.createTextRange();
+        textRange = oDocument.selection.createRange();
+        preCaretTextRange = oDocument.body.createTextRange();
         preCaretTextRange.moveToElementText(this.domInputor);
         preCaretTextRange.setEndPoint("EndToEnd", textRange);
         return preCaretTextRange.text.length;
@@ -62,14 +62,14 @@
           pos = clonedRange.toString().length;
           clonedRange.detach();
           return pos;
-        } else if (document.selection) {
+        } else if (oDocument.selection) {
           return this.getOldIEPos();
         }
       };
 
       EditableCaret.prototype.getOldIEOffset = function() {
         var range, rect;
-        range = document.selection.createRange().duplicate();
+        range = oDocument.selection.createRange().duplicate();
         range.moveStart("character", -1);
         rect = range.getBoundingClientRect();
         return {
@@ -81,7 +81,7 @@
 
       EditableCaret.prototype.getOffset = function(pos) {
         var clonedRange, offset, range, rect;
-        if (window.getSelection && (range = this.range())) {
+        if (oWindow.getSelection && (range = this.range())) {
           if (range.endOffset - 1 < 0) {
             return null;
           }
@@ -95,22 +95,22 @@
             top: rect.top
           };
           clonedRange.detach();
-        } else if (document.selection) {
+        } else if (oDocument.selection) {
           offset = this.getOldIEOffset();
         }
-        if (offset) {
-          offset.top += $(window).scrollTop();
-          offset.left += $(window).scrollLeft();
+        if (offset && !oFrame) {
+          offset.top += $(oWindow).scrollTop();
+          offset.left += $(oWindow).scrollLeft();
         }
         return offset;
       };
 
       EditableCaret.prototype.range = function() {
         var sel;
-        if (!window.getSelection) {
+        if (!oWindow.getSelection) {
           return;
         }
-        sel = window.getSelection();
+        sel = oWindow.getSelection();
         if (sel.rangeCount > 0) {
           return sel.getRangeAt(0);
         } else {
@@ -130,7 +130,7 @@
       InputCaret.prototype.getIEPos = function() {
         var endRange, inputor, len, normalizedValue, pos, range, textInputRange;
         inputor = this.domInputor;
-        range = document.selection.createRange();
+        range = oDocument.selection.createRange();
         pos = 0;
         if (range && range.parentElement() === inputor) {
           normalizedValue = inputor.value.replace(/\r\n/g, "\n");
@@ -149,7 +149,7 @@
       };
 
       InputCaret.prototype.getPos = function() {
-        if (document.selection) {
+        if (oDocument.selection) {
           return this.getIEPos();
         } else {
           return this.domInputor.selectionStart;
@@ -159,7 +159,7 @@
       InputCaret.prototype.setPos = function(pos) {
         var inputor, range;
         inputor = this.domInputor;
-        if (document.selection) {
+        if (oDocument.selection) {
           range = inputor.createTextRange();
           range.move("character", pos);
           range.select();
@@ -187,10 +187,10 @@
       InputCaret.prototype.getOffset = function(pos) {
         var $inputor, offset, position;
         $inputor = this.$inputor;
-        if (document.selection) {
+        if (oDocument.selection) {
           offset = this.getIEOffset(pos);
-          offset.top += $(window).scrollTop() + $inputor.scrollTop();
-          offset.left += $(window).scrollLeft() + $inputor.scrollLeft();
+          offset.top += $(oWindow).scrollTop() + $inputor.scrollTop();
+          offset.left += $(oWindow).scrollLeft() + $inputor.scrollLeft();
           return offset;
         } else {
           offset = $inputor.offset();
@@ -284,14 +284,6 @@
 
     })();
     Utils = {
-      adjustOffset: function(offset, $inputor) {
-        if (!offset) {
-          return;
-        }
-        offset.top += $(window).scrollTop();
-        offset.left += $(window).scrollLeft();
-        return offset;
-      },
       contentEditable: function($inputor) {
         return !!($inputor[0].contentEditable && $inputor[0].contentEditable === 'true');
       }
@@ -305,18 +297,31 @@
         }
       },
       position: function(pos) {
-        if (document.selection) {
+        if (oDocument.selection) {
           return this.getIEPosition(pos);
         } else {
           return this.getPosition(pos);
         }
       },
       offset: function(pos) {
-        return this.getOffset(pos);
+        var iOffset, offset;
+        offset = this.getOffset(pos);
+        if (oFrame) {
+          iOffset = $(oFrame).offset();
+          offset.top += iOffset.top;
+          offset.left += iOffset.left;
+        }
+        return offset;
       }
     };
+    oDocument = null;
+    oWindow = null;
+    oFrame = null;
     $.fn.caret = function(method) {
       var caret;
+      oDocument = this[0].ownerDocument;
+      oWindow = oDocument.defaultView || oDocument.parentWindow;
+      oFrame = oWindow.frameElement;
       caret = Utils.contentEditable(this) ? new EditableCaret(this) : new InputCaret(this);
       if (methods[method]) {
         return methods[method].apply(caret, Array.prototype.slice.call(arguments, 1));
@@ -474,6 +479,8 @@
         this.app = app;
         this.at = at;
         this.$inputor = this.app.$inputor;
+        this.oDocument = this.$inputor[0].ownerDocument;
+        this.oWindow = this.oDocument.defaultView || this.oDocument.parentWindow;
         this.id = this.$inputor[0].id || uuid();
         this.setting = null;
         this.query = null;
@@ -574,20 +581,14 @@
       };
 
       Controller.prototype.mark_range = function() {
-        this.range = this.get_range();
-        return this.ie_range = this.get_ie_range();
-      };
-
-      Controller.prototype.clear_range = function() {
-        return this.range = null;
-      };
-
-      Controller.prototype.get_range = function() {
-        return this.range || (window.getSelection ? window.getSelection().getRangeAt(0) : void 0);
-      };
-
-      Controller.prototype.get_ie_range = function() {
-        return this.ie_range || (document.selection ? document.selection.createRange() : void 0);
+        if (this.$inputor.attr('contentEditable') === 'true') {
+          if (this.oWindow.getSelection) {
+            this.range = this.oWindow.getSelection().getRangeAt(0);
+          }
+          if (this.oDocument.selection) {
+            return this.ie8_range = this.oDocument.selection.createRange();
+          }
+        }
       };
 
       Controller.prototype.insert_content_for = function($li) {
@@ -611,9 +612,9 @@
           class_name = "atwho-view-flag atwho-view-flag-" + (this.get_opt('alias') || this.at);
           content_node = "" + content + "<span contenteditable='false'>&nbsp;<span>";
           insert_node = "<span contenteditable='false' class='" + class_name + "'>" + content_node + "</span>";
-          $insert_node = $(insert_node).data('atwho-data-item', $li.data('item-data'));
-          if (document.selection) {
-            $insert_node = $("<span contenteditable='true'></span>").html($insert_node);
+          $insert_node = $(insert_node, this.oDocument).data('atwho-data-item', $li.data('item-data'));
+          if (this.oDocument.selection) {
+            $insert_node = $("<span contenteditable='true'></span>", this.oDocument).html($insert_node);
           }
         }
         if ($inputor.is('textarea, input')) {
@@ -623,17 +624,17 @@
           text = "" + start_str + content + " " + (source.slice(this.query['end_pos'] || 0));
           $inputor.val(text);
           $inputor.caret('pos', start_str.length + content.length + 1);
-        } else if (range = this.get_range()) {
+        } else if (range = this.range) {
           pos = range.startOffset - (this.query.end_pos - this.query.head_pos) - this.at.length;
           range.setStart(range.endContainer, Math.max(pos, 0));
           range.setEnd(range.endContainer, range.endOffset);
           range.deleteContents();
           range.insertNode($insert_node[0]);
           range.collapse(false);
-          sel = window.getSelection();
+          sel = this.oWindow.getSelection();
           sel.removeAllRanges();
           sel.addRange(range);
-        } else if (range = this.get_ie_range()) {
+        } else if (range = this.ie8_range) {
           range.moveStart('character', this.query.end_pos - this.query.head_pos - this.at.length);
           range.pasteHTML(content_node);
           range.collapse(false);
@@ -750,17 +751,12 @@
         var $menu,
           _this = this;
         $menu = this.$el.find('ul');
-        $menu.on('mouseenter.atwho-view', 'li', function(e) {
+        return $menu.on('mouseenter.atwho-view', 'li', function(e) {
           $menu.find('.cur').removeClass('cur');
           return $(e.currentTarget).addClass('cur');
         }).on('click', function(e) {
           _this.choose();
           return e.preventDefault();
-        });
-        return this.$el.on('mouseenter.atwho-view', 'ul', function(e) {
-          return _this.context.mark_range();
-        }).on('mouseleave.atwho-view', 'ul', function(e) {
-          return _this.context.clear_range();
         });
       };
 
@@ -812,6 +808,7 @@
 
       View.prototype.show = function() {
         var rect;
+        this.context.mark_range();
         if (!this.visible()) {
           this.$el.show();
         }
